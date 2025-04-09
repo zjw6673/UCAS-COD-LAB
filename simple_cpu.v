@@ -96,7 +96,7 @@ module simple_cpu(
 	assign shiftNum = Instruction[2] ? src1[4:0] : shamt;
 	// alu
 	wire aluAOp;
-	// Memdata generate
+	// MemReadData generate
 	wire [7:0] memReadByte = (Read_data[7:0] & {8{aluOut[1:0] == 2'b00}})
 	                       | (Read_data[15:8] & {8{aluOut[1:0] == 2'b01}})
 	                       | (Read_data[23:16] & {8{aluOut[1:0] == 2'b10}})
@@ -141,6 +141,31 @@ module simple_cpu(
 	                | (nextInst & {32{opcode == 6'b000011}}) // jal
 	                | (aluOut & {32{opcode[5:3] == 3'b001}}) // I-Cal_type
 	                | (memReadData & {32{opcode[5:3] == 3'b100}}); // MemRead
+	// MemWrite
+	assign Address = {aluOut[31:2], 2'b00};
+	assign MemRead = opcode[5:3] == 3'b100;
+	assign MemWrite = opcode[5:3] == 3'b101;
+	assign Write_data = src2;
+	wire [3:0] memWriteByte = (4'b0001 & {4{aluOut[1:0] == 2'b00}})
+	                        | (4'b0010 & {4{aluOut[1:0] == 2'b01}})
+	                        | (4'b0100 & {4{aluOut[1:0] == 2'b10}})
+	                        | (4'b1000 & {4{aluOut[1:0] == 2'b11}});
+	wire [3:0] memWriteHalf = (4'b0011 & {4{aluOut[1:0] == 2'b00}})
+	                        | (4'b1100 & {4{aluOut[1:0] == 2'b10}});
+	wire [3:0] memWriteUpperBytes = (4'b1000 & {4{aluOut[1:0] == 2'b11}})
+	                              | (4'b1100 & {4{aluOut[1:0] == 2'b10}})
+	                              | (4'b1110 & {4{aluOut[1:0] == 2'b01}})
+	                              | (4'b1111 & {4{aluOut[1:0] == 2'b00}});
+	wire [3:0] memWriteLowerBytes = (4'b1111 & {4{aluOut[1:0] == 2'b11}})
+	                              | (4'b0111 & {4{aluOut[1:0] == 2'b10}})
+	                              | (4'b0011 & {4{aluOut[1:0] == 2'b01}})
+	                              | (4'b0001 & {4{aluOut[1:0] == 2'b00}});
+	assign Write_strb = (memWriteByte & {4{opcode[2:0] == 3'b000}})
+	                  | (memWriteHalf & {4{opcode[2:0] == 3'b001}})
+	                  | (4'b1111 & {4{opcode[2:0] == 3'b011}})
+	                  | (memWriteUpperBytes & {4{opcode[2:0] == 3'b010}})
+	                  | (memWriteLowerBytes & {4{opcode[2:0] == 3'b110}});
+	
 	/* connect pcNext */
 	wire [31:0] pcOffset = pcOp[0] ? {immS16[31-2:0], 2'b00}: 32'd8;
 	wire [31:0] pcMask = pcOp[0] ? {pcReg[31:28], imm26, 2'b00}: src1;

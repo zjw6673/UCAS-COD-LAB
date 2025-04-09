@@ -12,11 +12,13 @@ module alu(
 	output [`DATA_WIDTH - 1:0]  Result
 );
 	// TODO: Please add your logic design here
-	wire [`DATA_WIDTH-1:0] ADD, AND, OR;
+	wire [`DATA_WIDTH-1:0] ADD, AND, OR, XOR, NOR;
 	wire is_sub, carry;
+	wire  altbs; // a less than b signed
+	wire  altbu; // a less then b unsigned
 
 	/* if is doing sub */
-	assign is_sub = ALUop[2];
+	assign is_sub = ALUop[1] & (ALUop[0] | ALUop[2]);
 	/* modify B accordingly */
 	wire [`DATA_WIDTH-1:0] modified_B;
 	assign modified_B = B ^ {`DATA_WIDTH{is_sub}};
@@ -25,17 +27,23 @@ module alu(
 	assign CarryOut = carry ^ is_sub; // for sub, 0 means carryout, for add 1 means carryout
 	assign Overflow = (A[`DATA_WIDTH-1] == modified_B[`DATA_WIDTH-1])
 				&& (ADD[`DATA_WIDTH-1] != A[`DATA_WIDTH-1]);
-	/* compute and and or */
+	/* compute other signals */
 	assign AND = A & modified_B;
 	assign OR = A | modified_B;
+	assign XOR = A ^ modified_B;
+	assign NOR = ~OR;
+	assign altbs = ADD[`DATA_WIDTH-1] ^ Overflow;
+	assign altbu = A[`DATA_WIDTH-1] ^ B[`DATA_WIDTH-1] ? B[`DATA_WIDTH-1] : altbs;
 
 	/* assign output */
 	assign Result = (AND & {`DATA_WIDTH{(ALUop == 3'b000)}})
 		     | (OR & {`DATA_WIDTH{(ALUop == 3'b001)}})
+		     | (XOR & {`DATA_WIDTH{(ALUop == 3'b100)}})
+		     | (NOR & {`DATA_WIDTH{(ALUop == 3'b101)}})
 		     | (ADD & {`DATA_WIDTH{(ALUop == 3'b010)}})
 		     | (ADD & {`DATA_WIDTH{(ALUop == 3'b110)}})
-		     | ({ {(`DATA_WIDTH-1){1'b0}}, ADD[`DATA_WIDTH-1] ^ Overflow}
-		     	& {`DATA_WIDTH{(ALUop == 3'b111)}});
+		     | ({{(`DATA_WIDTH-1){1'b0}}, altbs} & {`DATA_WIDTH{(ALUop == 3'b111)}})
+		     | ({{(`DATA_WIDTH-1){1'b0}}, altbu} & {`DATA_WIDTH{(ALUop == 3'b011)}});
 	/* compute zero */
 	assign Zero = ~{| Result};
 endmodule

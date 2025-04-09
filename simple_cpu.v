@@ -45,7 +45,7 @@ module simple_cpu(
 	wire [1:0] pcOp;
 	// decode signal
 	wire [5:0] opcode, func;
-	wire [4:0] rs, rt, rd;
+	wire [4:0] rs, rt, rd, shamt;
 	wire [31:0] src1, src2;
 	wire [31:0] immS16, immU16;
 	wire [25:0] imm26;
@@ -69,6 +69,7 @@ module simple_cpu(
 	assign rs = Instruction[25:21];
 	assign rt = Instruction[20:16];
 	assign rd = Instruction[15:11];
+	assign shamt = Instruction[10:6];
 	assign func = Instruction[5:0];
 	// src
 	assign RF_raddr1 = rs;
@@ -85,18 +86,71 @@ module simple_cpu(
 	            | ((opcode[5:0] == 6'b000001) & (~|aluZero)) // REGIMM_type
 	            | ((opcode[5:2] == 4'b0001) & (|aluZero ^ |opcode[1:0])); // I-BRANCH_type
 	wire [1:0] pcCondExt = {2{pcCond}};
-	assign pcOp = (~|opcode ? pcJmp	// R_type jump
+	assign pcOp = (~|opcode ? pcJmp // R_type jump
 		: (opcode[5:1] == 5'b00001 ? pcBranch // J_type
 		: pcOff // all other types
 		)) & pcCondExt;
-
-	// connect pcNext
+	// connect shifter
+	assign shiftOp = Instruction[1:0];
+	assign shiftTarget = src2;
+	assign shiftNum = Instruction[2] ? src1[4:0] : shamt;
+	// alu
+	wire aluAOp;
+	// Memdata generate
+	wire [7:0] memReadByte = (Read_data[7:0] & {8{aluOut[1:0] == 2'b00}})
+	                       | (Read_data[15:8] & {8{aluOut[1:0] == 2'b01}})
+	                       | (Read_data[23:16] & {8{aluOut[1:0] == 2'b10}})
+	                       | (Read_data[31:24] & {8{aluOut[1:0] == 2'b11}});
+	wire [15:0] memReadHalf = (Read_data[15:0] & {16{aluOut[1:0] == 2'b00}})
+	                        | (Read_data[31:16] & {16{aluOut[1:0] == 2'b10}});
+	wire [31:0] memReadByteS = {{24{memReadByte[7]}}, memReadByte};
+	wire [31:0] memReadByteU = {{24{1'b0}}, memReadByte};
+	wire [31:0] memReadHalfS = {{16{memReadHalf[15]}}, memReadHalf};
+	wire [31:0] memReadHalfU = {{16{1'b0}}, memReadHalf};
+	wire [31:0] memReadUpperBytes = ({Read_data[31:24], src2[23:0]} & {32{aluOut[1:0] == 2'b11}})
+	                              | ({Read_data[31:16], src2[15:0]} & {32{aluOut[1:0] == 2'b10}})
+	                              | ({Read_data[31:8], src2[7:0]} & {32{aluOut[1:0] == 2'b01}})
+	                              | (Read_data[31:0] & {32{aluOut[1:0] == 2'b00}});
+	wire [31:0] memReadLowerBytes = ({src2[31:8], Read_data[7:0]} & {32{aluOut[1:0] == 2'b00}})
+	                              | ({src2[31:16], Read_data[15:0]} & {32{aluOut[1:0] == 2'b01}})
+	                              | ({src2[31:24], Read_data[23:0]} & {32{aluOut[1:0] == 2'b10}})
+	                              | (Read_data[31:0] & {32{aluOut[1:0] == 2'b11}});
+	wire [31:0] memReadData = (memReadByteS & {32{opcode[2:0] == 3'b000}})
+	                        | (memReadHalfS & {32{opcode[2:0] == 3'b001}})
+	                        | (Read_data & {32{opcode[2:0] == 3'b011}})
+	                        | (memReadByteU & {32{opcode[2:0] == 3'b100}})
+	                        | (memReadHalfU & {32{opcode[2:0] == 3'b101}})
+	                        | (memReadUpperBytes & {32{opcode[2:0] == 3'b010}})
+	                        | (memReadLowerBytes & {32{opcode[2:0] == 3'b110}});
+	// regfile_write
+	assign RF_wen = ((~|opcode) & func[5:3] != 3'b001) // R_type and not Jump or Mov
+	              | ((~|opcode) & {func[5:3], func[1]} == 4'b0010 & func[0]) // R_type Jump
+	              | ((~|opcode) & {func[5:3], func[1]} == 4'b0011 & (func[0] ^ ~|src2)) // R_type Mov
+	              | (opcode == 6'b000011) // jal inst
+	              | (opcode[5:3] == 3'b001) // I-Cal_type
+	              | (opcode[5:3] == 3'b100); // Memread type
+	assign RF_waddr = opcode == 6'b000011 ? 5'd31 // jal
+		: (opcode == 6'b000000 ? rd // R_type
+		: rt // others
+		);
+	wire [31:0] nextInst = pcReg + 32'd8;
+	assign RF_wdata = (aluOut & {32{(opcode == 6'b000000 & func[5] == 1)}}) // R_type Cal
+	                | (shiftOut & {32{(opcode == 6'b000000 & func[5:3] == 3'b000)}}) // R_type shift
+	                | (nextInst & {32{(opcode == 6'b000000 & func[3:0] == 4'b1001)}}) // jalr
+	                | (src1 & {32{(opcode == 6'b000000 & {func[5], func[3:1]} == 4'b0101)}}) // R_type Mov
+	                | (nextInst & {32{opcode == 6'b000011}}) // jal
+	                | (aluOut & {32{opcode[5:3] == 3'b001}}) // I-Cal_type
+	                | (memReadData & {32{opcode[5:3] == 3'b100}}); // MemRead
+	/* connect pcNext */
 	wire [31:0] pcOffset = pcOp[0] ? {immS16[31-2:0], 2'b00}: 32'd8;
 	wire [31:0] pcMask = pcOp[0] ? {pcReg[31:28], imm26, 2'b00}: src1;
 	assign pcNext = pcOp[1] ? pcMask : pcReg + pcOffset;
 	// update pc
 	always @(posedge clk) begin
-		pcReg <= pcNext;
+		if (rst)
+			pcReg <= 0;
+		else
+			pcReg <= pcNext;
 	end
 
 	/* assign Output */

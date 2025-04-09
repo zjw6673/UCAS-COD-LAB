@@ -38,11 +38,10 @@ module simple_cpu(
 	wire [31:0] aluA, aluB, aluOut;
 	wire aluZero;
 	// pc
-	// 00 - pc + 8
+	// 00 - pc + 4
 	// 10 - src1
-	// 01 - pc + Sext(imm ## 00)
+	// 01 - pc + 4 + Sext(imm ## 00)
 	// 11 - pc[31:28] ## imm[25:0] ## 00
-	localparam pcNextInst = 2'b00, pcJmp = 2'b10, pcOff = 2'b01, pcBranch = 2'b11;
 	wire [1:0] pcOp;
 	// decode signal
 	wire [5:0] opcode, func;
@@ -87,9 +86,9 @@ module simple_cpu(
 	            | ((opcode[5:0] == 6'b000001) & (~aluZero)) // REGIMM_type
 	            | ((opcode[5:2] == 4'b0001) & (aluZero ^ |opcode[1:0])); // I-BRANCH_type
 	wire [1:0] pcCondExt = {2{pcCond}};
-	assign pcOp = (~|opcode ? pcJmp // R_type jump
-		: (opcode[5:1] == 5'b00001 ? pcBranch // J_type
-		: pcOff // all other types
+	assign pcOp = (~|opcode ? 2'b10 // R_type jump
+		: (opcode[5:1] == 5'b00001 ? 2'b11 // J_type
+		: 2'b01 // all other types
 		)) & pcCondExt;
 	// connect shifter
 	assign shiftOp = Instruction[1:0];
@@ -158,12 +157,12 @@ module simple_cpu(
 		: (opcode == 6'b000000 ? rd // R_type
 		: rt // others
 		);
-	wire [31:0] nextInst = pcReg + 32'd8;
+	wire [31:0] nextInst = pcReg + 32'd4;
 	assign RF_wdata = (aluOut & {32{(opcode == 6'b000000 & func[5] == 1)}}) // R_type Cal
 	                | (shiftOut & {32{(opcode == 6'b000000 & func[5:3] == 3'b000)}}) // R_type shift
-	                | (nextInst & {32{(opcode == 6'b000000 & func[3:0] == 4'b1001)}}) // jalr
+	                | (nextInst + 32'd4 & {32{(opcode == 6'b000000 & func[3:0] == 4'b1001)}}) // jalr
 	                | (src1 & {32{(opcode == 6'b000000 & {func[5], func[3:1]} == 4'b0101)}}) // R_type Mov
-	                | (nextInst & {32{opcode == 6'b000011}}) // jal
+	                | (nextInst + 32'd4 & {32{opcode == 6'b000011}}) // jal
 	                | (aluOut & {32{opcode[5:3] == 3'b001}}) // I-Cal_type
 	                | (memReadData & {32{opcode[5:3] == 3'b100}}); // MemRead
 	// MemWrite
@@ -192,9 +191,9 @@ module simple_cpu(
 	                  | (memWriteLowerBytes & {4{opcode[2:0] == 3'b110}});
 	
 	/* connect pcNext */
-	wire [31:0] pcOffset = pcOp[0] ? {immS16[31-2:0], 2'b00}: 32'd8;
+	wire [31:0] pcOffset = pcOp[0] ? {immS16[31-2:0], 2'b00} : 32'd0;
 	wire [31:0] pcMask = pcOp[0] ? {pcReg[31:28], imm26, 2'b00}: src1;
-	assign pcNext = pcOp[1] ? pcMask : pcReg + pcOffset;
+	assign pcNext = pcOp[1] ? pcMask : nextInst + pcOffset;
 	// update pc
 	always @(posedge clk) begin
 		if (rst)

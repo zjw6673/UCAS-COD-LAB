@@ -81,7 +81,7 @@ module simple_cpu(
 	assign immU16 = {{16{1'b0}}, Instruction[15:0]};
 	assign imm26 = Instruction[25:0];
 	// pcOp
-	wire pcCond = ((~|opcode) & (func[5:3] == 3'b001)) // R_type jump
+	wire pcCond = ((~|opcode) & ({func[5:3], func[1]} == 4'b0010)) // R_type jump
 	            | (opcode[5:1] == 5'b00001) // J_type
 	            | ((opcode[5:0] == 6'b000001) & (~aluZero)) // REGIMM_type
 	            | ((opcode[5:2] == 4'b0001) & (aluZero ^ |opcode[1:0])); // I-BRANCH_type
@@ -193,7 +193,7 @@ module simple_cpu(
 	/* connect pcNext */
 	wire [31:0] pcOffset = pcOp[0] ? {immS16[31-2:0], 2'b00} : 32'd0;
 	wire [31:0] pcMask = pcOp[0] ? {pcReg[31:28], imm26, 2'b00}: src1;
-	assign pcNext = pcOp[1] ? pcMask : nextInst + pcOffset;
+	assign pcNext = pcOp[1] ? pcMask : (nextInst + pcOffset);
 	// update pc
 	always @(posedge clk) begin
 		if (rst)

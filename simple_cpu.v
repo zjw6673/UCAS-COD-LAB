@@ -35,7 +35,8 @@ module simple_cpu(
 	wire [4:0] shiftNum;
 	// alu
 	wire [2:0] aluOp;
-	wire [31:0] aluA, aluB, aluOut, aluZero;
+	wire [31:0] aluA, aluB, aluOut;
+	wire aluZero;
 	// pc
 	// 00 - pc + 8
 	// 10 - src1
@@ -59,7 +60,7 @@ module simple_cpu(
 	shifter shifter (.A(shiftTarget), .B(shiftNum), .Shiftop(shiftOp), .Result(shiftOut));
 	// alu
 	alu alu (.A(aluA), .B(aluB), .ALUop(aluOp), .Overflow(), .CarryOut(),
-		.Zero(aluZero), .Result(aluResult));
+		.Zero(aluZero), .Result(aluOut));
 	// pc
 	reg [31:0] pcReg;
 	wire [31:0] pcNext;
@@ -83,8 +84,8 @@ module simple_cpu(
 	// pcOp
 	wire pcCond = ((~|opcode) & (func[5:3] == 3'b001)) // R_type jump
 	            | (opcode[5:1] == 5'b00001) // J_type
-	            | ((opcode[5:0] == 6'b000001) & (~|aluZero)) // REGIMM_type
-	            | ((opcode[5:2] == 4'b0001) & (|aluZero ^ |opcode[1:0])); // I-BRANCH_type
+	            | ((opcode[5:0] == 6'b000001) & (~aluZero)) // REGIMM_type
+	            | ((opcode[5:2] == 4'b0001) & (aluZero ^ |opcode[1:0])); // I-BRANCH_type
 	wire [1:0] pcCondExt = {2{pcCond}};
 	assign pcOp = (~|opcode ? pcJmp // R_type jump
 		: (opcode[5:1] == 5'b00001 ? pcBranch // J_type
@@ -95,7 +96,31 @@ module simple_cpu(
 	assign shiftTarget = src2;
 	assign shiftNum = Instruction[2] ? src1[4:0] : shamt;
 	// alu
-	wire aluAOp;
+	assign aluOp = ({func[1], 2'b10} & {3{opcode == 6'b000000 & func[3:2] == 2'b00}}) // add and sub
+	             | ({func[1], 1'b0, func[0]} & {3{opcode == 6'b000000 & func[3:2] == 2'b01}}) // and or xor nor
+	             | ({~func[0], 2'b11} & {3{opcode == 6'b000000 & func[3:2] == 2'b10}}) // slt and sltu
+	             | (3'b111 & {3{opcode == 6'b000001}}) // REGIMM_type
+	             | ({2'b11, opcode[1]} & {3{opcode[5:2] == 4'b0001}}) // I-BRANCH_type
+	             | (3'b010 & {3{opcode[5:4] == 2'b10}}) // I-MEM_type
+	             | (3'b010 & {3{opcode == 6'b001111}}) // lui
+	             | ({opcode[1], 2'b10} & {3{opcode[5:3] == 3'b001 & opcode[2:1] == 2'b00}}) // addiu
+	             | ({opcode[1], 1'b0, opcode[0]} & {3{opcode[5:3] == 3'b001 & opcode[2] == 1'b1}}) // andi, ori, xori
+	             | ({~opcode[0], 2'b11} & {3{opcode[5:3] == 3'b001 & opcode[2:1] == 2'b01}}); // slti, sltiu
+	assign aluA = (opcode == 6'b000001 & rt == 5'b00001 ? 32'h11111111
+		: (opcode == 6'b000111 ? 32'd0
+		: src1
+	));
+	assign aluB = (src2 & {32{opcode == 6'b000000}}) // R_type
+	            | (32'd0 & {32{opcode == 6'b000001 & rt == 5'b00000}}) // bltz
+	            | (src1 & {32{opcode == 6'b000001 & rt == 5'b00001}}) // bgez
+	            | (src2 & {32{opcode[5:1] == 5'b00010}}) // beq, bne
+	            | (32'd1 & {32{opcode == 6'b000110}}) // blez
+	            | (src1 & {32{opcode == 6'b000111}}) // blez
+	            | (immS16 & {32{opcode == 6'b001001}}) // addiu
+	            | ({immS16[15:0], 16'd0} & {32{opcode == 6'b001111}}) // lui
+	            | (immU16 & {32{opcode[5:2] == 4'b0011 & ~(opcode[1] & opcode[0])}}) // andi ori xori
+	            | (immS16 & {32{opcode[5:1] == 5'b00101}}) // slti sltiu
+	            | (immS16 & {32{opcode[5:4] == 2'b10}}); // I-MEM_type
 	// MemReadData generate
 	wire [7:0] memReadByte = (Read_data[7:0] & {8{aluOut[1:0] == 2'b00}})
 	                       | (Read_data[15:8] & {8{aluOut[1:0] == 2'b01}})

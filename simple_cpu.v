@@ -102,9 +102,9 @@ module simple_cpu(
 	             | ({2'b11, opcode[1]} & {3{opcode[5:2] == 4'b0001}}) // I-BRANCH_type
 	             | (3'b010 & {3{opcode[5:4] == 2'b10}}) // I-MEM_type
 	             | (3'b010 & {3{opcode == 6'b001111}}) // lui
-	             | ({opcode[1], 2'b10} & {3{opcode[5:3] == 3'b001 & opcode[2:1] == 2'b00}}) // addiu
-	             | ({opcode[1], 1'b0, opcode[0]} & {3{opcode[5:3] == 3'b001 & opcode[2] == 1'b1}}) // andi, ori, xori
-	             | ({~opcode[0], 2'b11} & {3{opcode[5:3] == 3'b001 & opcode[2:1] == 2'b01}}); // slti, sltiu
+	             | (3'b010 & {3{opcode[5:1] == 5'b00100}}) // addiu
+	             | ({opcode[1], 1'b0, opcode[0]} & {3{opcode[5:2] == 4'b0011 & ~(opcode[1] & opcode[0])}}) // andi, ori, xori
+	             | ({~opcode[0], 2'b11} & {3{opcode[5:1] == 5'b00101}}); // slti, sltiu
 	assign aluA = (opcode == 6'b000001 & rt == 5'b00001 ? 32'h11111111
 		: (opcode == 6'b000111 ? 32'd0
 		: src1
@@ -131,14 +131,14 @@ module simple_cpu(
 	wire [31:0] memReadByteU = {{24{1'b0}}, memReadByte};
 	wire [31:0] memReadHalfS = {{16{memReadHalf[15]}}, memReadHalf};
 	wire [31:0] memReadHalfU = {{16{1'b0}}, memReadHalf};
-	wire [31:0] memReadUpperBytes = ({Read_data[31:24], src2[23:0]} & {32{aluOut[1:0] == 2'b11}})
-	                              | ({Read_data[31:16], src2[15:0]} & {32{aluOut[1:0] == 2'b10}})
-	                              | ({Read_data[31:8], src2[7:0]} & {32{aluOut[1:0] == 2'b01}})
-	                              | (Read_data[31:0] & {32{aluOut[1:0] == 2'b00}});
-	wire [31:0] memReadLowerBytes = ({src2[31:8], Read_data[7:0]} & {32{aluOut[1:0] == 2'b00}})
-	                              | ({src2[31:16], Read_data[15:0]} & {32{aluOut[1:0] == 2'b01}})
-	                              | ({src2[31:24], Read_data[23:0]} & {32{aluOut[1:0] == 2'b10}})
-	                              | (Read_data[31:0] & {32{aluOut[1:0] == 2'b11}});
+	wire [31:0] memReadUpperBytes = (Read_data[31:0] & {32{aluOut[1:0] == 2'b11}})
+	                              | ({Read_data[23:0], src2[7:0]} & {32{aluOut[1:0] == 2'b10}})
+	                              | ({Read_data[15:0], src2[15:0]} & {32{aluOut[1:0] == 2'b01}})
+	                              | ({Read_data[7:0], src2[23:0]} & {32{aluOut[1:0] == 2'b00}});
+	wire [31:0] memReadLowerBytes = (Read_data[31:0] & {32{aluOut[1:0] == 2'b00}})
+	                              | ({src2[31:24], Read_data[31:8]} & {32{aluOut[1:0] == 2'b01}})
+	                              | ({src2[31:16], Read_data[31:16]} & {32{aluOut[1:0] == 2'b10}})
+	                              | ({src2[31:8], Read_data[31:24]} & {32{aluOut[1:0] == 2'b11}});
 	wire [31:0] memReadData = (memReadByteS & {32{opcode[2:0] == 3'b000}})
 	                        | (memReadHalfS & {32{opcode[2:0] == 3'b001}})
 	                        | (Read_data & {32{opcode[2:0] == 3'b011}})
@@ -169,26 +169,44 @@ module simple_cpu(
 	assign Address = {aluOut[31:2], 2'b00};
 	assign MemRead = opcode[5:3] == 3'b100;
 	assign MemWrite = opcode[5:3] == 3'b101;
-	assign Write_data = src2;
-	wire [3:0] memWriteByte = (4'b0001 & {4{aluOut[1:0] == 2'b00}})
+	wire [3:0] memWriteByteMask = (4'b0001 & {4{aluOut[1:0] == 2'b00}})
 	                        | (4'b0010 & {4{aluOut[1:0] == 2'b01}})
 	                        | (4'b0100 & {4{aluOut[1:0] == 2'b10}})
 	                        | (4'b1000 & {4{aluOut[1:0] == 2'b11}});
-	wire [3:0] memWriteHalf = (4'b0011 & {4{aluOut[1:0] == 2'b00}})
+	wire [3:0] memWriteHalfMask = (4'b0011 & {4{aluOut[1:0] == 2'b00}})
 	                        | (4'b1100 & {4{aluOut[1:0] == 2'b10}});
-	wire [3:0] memWriteUpperBytes = (4'b1000 & {4{aluOut[1:0] == 2'b11}})
-	                              | (4'b1100 & {4{aluOut[1:0] == 2'b10}})
-	                              | (4'b1110 & {4{aluOut[1:0] == 2'b01}})
-	                              | (4'b1111 & {4{aluOut[1:0] == 2'b00}});
-	wire [3:0] memWriteLowerBytes = (4'b1111 & {4{aluOut[1:0] == 2'b11}})
+	wire [3:0] memWriteUpperBytesMask = (4'b1111 & {4{aluOut[1:0] == 2'b11}})
 	                              | (4'b0111 & {4{aluOut[1:0] == 2'b10}})
 	                              | (4'b0011 & {4{aluOut[1:0] == 2'b01}})
 	                              | (4'b0001 & {4{aluOut[1:0] == 2'b00}});
-	assign Write_strb = (memWriteByte & {4{opcode[2:0] == 3'b000}})
-	                  | (memWriteHalf & {4{opcode[2:0] == 3'b001}})
+	wire [3:0] memWriteLowerBytesMask = (4'b1000 & {4{aluOut[1:0] == 2'b11}})
+	                              | (4'b1100 & {4{aluOut[1:0] == 2'b10}})
+	                              | (4'b1110 & {4{aluOut[1:0] == 2'b01}})
+	                              | (4'b1111 & {4{aluOut[1:0] == 2'b00}});
+	assign Write_strb = (memWriteByteMask & {4{opcode[2:0] == 3'b000}})
+	                  | (memWriteHalfMask & {4{opcode[2:0] == 3'b001}})
 	                  | (4'b1111 & {4{opcode[2:0] == 3'b011}})
-	                  | (memWriteUpperBytes & {4{opcode[2:0] == 3'b010}})
-	                  | (memWriteLowerBytes & {4{opcode[2:0] == 3'b110}});
+	                  | (memWriteUpperBytesMask & {4{opcode[2:0] == 3'b010}})
+	                  | (memWriteLowerBytesMask & {4{opcode[2:0] == 3'b110}});
+	wire [31:0] memWriteByte = ({24'b0, src2[7:0]} & {32{aluOut[1:0] == 2'b00}})
+	                  | ({16'b0, src2[7:0], 8'b0} & {32{aluOut[1:0] == 2'b01}})
+	                  | ({8'b0, src2[7:0], 16'b0} & {32{aluOut[1:0] == 2'b10}})
+	                  | ({src2[7:0], 24'b0} & {32{aluOut[1:0] == 2'b11}});
+	wire [31:0] memWriteHalf = ({16'b0, src2[15:0]} & {32{aluOut[1:0] == 2'b00}})
+	                  | ({src2[15:0], 16'b0} & {32{aluOut[1:0] == 2'b10}});
+	wire [31:0] memWriteUpperBytes = (src2 & {32{aluOut[1:0] == 2'b11}})
+	                               | ({8'b0, src2[31:8]} & {32{aluOut[1:0] == 2'b10}})
+	                               | ({16'b0, src2[31:16]} & {32{aluOut[1:0] == 2'b01}})
+	                               | ({24'b0, src2[31:24]} & {32{aluOut[1:0] == 2'b00}});
+	wire [31:0] memWriteLowerBytes = ({src2[7:0], 24'b0} & {32{aluOut[1:0] == 2'b11}})
+	                               | ({src2[15:0], 16'b0} & {32{aluOut[1:0] == 2'b10}})
+	                               | ({src2[23:0], 8'b0} & {32{aluOut[1:0] == 2'b01}})
+	                               | (src2[31:0] & {32{aluOut[1:0] == 2'b00}});
+	assign Write_data = (memWriteByte & {32{opcode[2:0] == 3'b000}}) // sb
+	                  | (memWriteHalf & {32{opcode[2:0] == 3'b001}}) // sh
+	                  | (src2 & {32{opcode[2:0] == 3'b011}}) // sw
+	                  | (memWriteUpperBytes & {32{opcode[2:0] == 3'b010}}) // swl
+	                  | (memWriteLowerBytes & {32{opcode[2:0] == 3'b110}}); // swr
 	
 	/* connect pcNext */
 	wire [31:0] pcOffset = pcOp[0] ? {immS16[31-2:0], 2'b00} : 32'd0;

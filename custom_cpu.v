@@ -293,7 +293,7 @@ module custom_cpu(
 	             | (3'b010                       & {3{is_IMemWriteType | is_IMemReadType | is_lui | is_addiu | is_jal | is_jalr}})
 	             | ({opcode[1], 1'b0, opcode[0]} & {3{is_andi_ori_xori}})
 	             | ({~opcode[0], 2'b11}          & {3{is_slti_sltiu}});
-	assign aluA = (is_bgez            ? 32'h11111111
+	assign aluA = (is_bgez            ? 32'hffffffff
 	            : (is_bgtz            ? 32'd0
 		    : ((is_jal | is_jalr) ? staticNextPc
 	            :                       src1 )));
@@ -394,4 +394,81 @@ module custom_cpu(
 			cycle_cnt <= cycle_cnt + 32'd1;
 	end
 	assign cpu_perf_cnt_0 = cycle_cnt;
+
+	reg [31:0] inst_cnt;
+	always @(posedge clk) begin
+		if (rst == 1'b1)
+			inst_cnt <= 32'd0;
+		else if (current_state == ID) // each inst goes through ID state for exactly one cycle
+			inst_cnt <= inst_cnt + 32'd1;
+		else
+			inst_cnt <= inst_cnt;
+	end
+	assign cpu_perf_cnt_1 = inst_cnt;
+
+	reg [31:0] mem_read_inst_cnt;
+	always @(posedge clk) begin
+		if (rst == 1'b1)
+			mem_read_inst_cnt <= 32'd0;
+		else if (current_state == ID && is_IMemReadType)
+			mem_read_inst_cnt <= mem_read_inst_cnt + 32'd1;
+		else
+			mem_read_inst_cnt <= mem_read_inst_cnt;
+	end
+	assign cpu_perf_cnt_2 = mem_read_inst_cnt;
+
+	reg [31:0] mem_write_inst_cnt;
+	always @(posedge clk) begin
+		if (rst == 1'b1)
+			mem_write_inst_cnt <= 32'd0;
+		else if (current_state == ID && is_IMemWriteType)
+			mem_write_inst_cnt <= mem_write_inst_cnt + 32'd1;
+		else
+			mem_write_inst_cnt <= mem_write_inst_cnt;
+	end
+	assign cpu_perf_cnt_3 = mem_write_inst_cnt;
+
+	reg [31:0] mem_read_req_cycle_cnt;
+	always @(posedge clk) begin
+		if (rst == 1'b1)
+			mem_read_req_cycle_cnt <= 32'd0;
+		else if (current_state == LD)
+			mem_read_req_cycle_cnt <= mem_read_req_cycle_cnt + 32'd1;
+		else
+			mem_read_req_cycle_cnt <= mem_read_req_cycle_cnt;
+	end
+	assign cpu_perf_cnt_4 = mem_read_req_cycle_cnt;
+
+	reg [31:0] mem_read_wait_cycle_cnt;
+	always @(posedge clk) begin
+		if (rst == 1'b1)
+			mem_read_wait_cycle_cnt <= 32'd0;
+		else if (current_state == RDW)
+			mem_read_wait_cycle_cnt <= mem_read_wait_cycle_cnt + 32'd1;
+		else
+			mem_read_wait_cycle_cnt <= mem_read_wait_cycle_cnt;
+	end
+	assign cpu_perf_cnt_5 = mem_read_wait_cycle_cnt;
+
+	reg [31:0] mem_write_req_cycle_cnt;
+	always @(posedge clk) begin
+		if (rst == 1'b1)
+			mem_write_req_cycle_cnt <= 32'd0;
+		else if (current_state == ST)
+			mem_write_req_cycle_cnt <= mem_write_req_cycle_cnt + 32'd1;
+		else
+			mem_write_req_cycle_cnt <= mem_write_req_cycle_cnt;
+	end
+	assign cpu_perf_cnt_6 = mem_write_req_cycle_cnt;
+
+	reg [31:0] bj_inst_cnt;
+	always @(posedge clk) begin
+		if (rst == 1'b1)
+			bj_inst_cnt <= 32'd0;
+		else if (current_state == ID && (is_REGIMMType | is_IBranchType | is_JType | is_R_JType))
+			bj_inst_cnt <= bj_inst_cnt + 32'd1;
+		else
+			bj_inst_cnt <= bj_inst_cnt;
+	end
+	assign cpu_perf_cnt_7 = bj_inst_cnt;
 endmodule

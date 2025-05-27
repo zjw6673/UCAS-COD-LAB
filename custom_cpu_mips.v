@@ -271,7 +271,9 @@ module custom_cpu(
 	wire [31:0] pcMask   = pcOp[0] ? {pcReg[31:28], imm26, 2'b00} : src1;
 	assign pcNext = pcOp[1] ? pcMask : (staticNextPc + pcOffset);
 	always @(posedge clk) begin
-		if (current_state == WB
+		if (rst)
+			pcReg <= 32'd0;
+		else if (current_state == WB
 		 | (current_state == ST & Mem_Req_Ready)
 		 | (current_state == EX & (is_REGIMMType|is_IBranchType|is_j))
 		 | (current_state == ID & is_nop))

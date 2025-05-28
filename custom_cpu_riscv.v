@@ -64,7 +64,10 @@ module custom_cpu(
 * }
 *
 */
-  // wire [69:0] inst_retire;
+  assign inst_retire[69] = RF_wen;
+  assign inst_retire[68:64] = RF_waddr;
+  assign inst_retire[63:32] = RF_wdata;
+  assign inst_retire[31:0] = pcReg;
 
 // TODO: Please add your custom CPU code here
 

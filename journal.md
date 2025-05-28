@@ -20,7 +20,23 @@
 # custom cpu design (RISCV)
 
 1. convert func3 to one-hot encoding
+
 2. pc update sequence: (PC port connects to nextPc)
 - during ID, generate snpc and bnpc according to pcReg and inst
 - after EX, update nextPc (choose between snpc and bnpc according to aluOut and decode value)
 - after IW, update pcReg to nextPc
+
+3. prefer massive wires instead of hareware reuse to assign signal like readData_Processed signal
+    although it may cause more wires to be instantiated, but it reduces laging
+
+4. aluOp optimization
+
+|aluOP|add|sub|and|or|xor|slt|sltu|
+|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+|R/ICAL(func3)|000|000|111|110|100|010|011|
+|B(func3)|-|00x|-|-|-|10x|11x|
+|otherType(func3)|xxx|-|-|-|-|-|-|
+|current ALU|010|110|000|001|100|111|011|
+|ideal ALU|001|000|111|110|100|010|011|
+
+not using truth table to optimize aluOp, since this is not extendable

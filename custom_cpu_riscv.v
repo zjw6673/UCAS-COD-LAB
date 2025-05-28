@@ -125,15 +125,15 @@ module custom_cpu(
 	wire [4:0] rs1    = instReg[19:15];
 	wire [4:0] rs2    = instReg[24:20];
 	wire [4:0] rd     = instReg[11: 7];
-	wire [7:0] func3_onehot;
-	assign func3_onehot[0] = (func3 == 3'b000);
-	assign func3_onehot[1] = (func3 == 3'b001);
-	assign func3_onehot[2] = (func3 == 3'b010);
-	assign func3_onehot[3] = (func3 == 3'b011);
-	assign func3_onehot[4] = (func3 == 3'b100);
-	assign func3_onehot[5] = (func3 == 3'b101);
-	assign func3_onehot[6] = (func3 == 3'b110);
-	assign func3_onehot[7] = (func3 == 3'b111);
+	wire [7:0] func; // convert func3 to onehot
+	assign func[0] = (func3 == 3'b000);
+	assign func[1] = (func3 == 3'b001);
+	assign func[2] = (func3 == 3'b010);
+	assign func[3] = (func3 == 3'b011);
+	assign func[4] = (func3 == 3'b100);
+	assign func[5] = (func3 == 3'b101);
+	assign func[6] = (func3 == 3'b110);
+	assign func[7] = (func3 == 3'b111);
 	// second layer
 	wire is_RType     = (opcode[6:2] == 5'b01100);
 	wire is_I_CalType = (opcode[6:2] == 5'b00100);
@@ -145,9 +145,9 @@ module custom_cpu(
 	wire is_AUIPC     = (opcode[6:2] == 5'b00101);
 	wire is_JType     = (opcode[6:2] == 5'b11011);
 	// third layer
-	wire is_shiftType = ((is_RType | is_I_CalType) & (func3_onehot[1] | func3_onehot[5]));
-	wire is_IType = (is_I_CalType | is_I_LDType | is_I_JType);
-	wire is_UType = (is_LUI | is_AUIPC);
+	wire is_shiftType = ((is_RType | is_I_CalType) & (func[1] | func[5]));
+	wire is_IType     = (is_I_CalType | is_I_LDType | is_I_JType);
+	wire is_UType     = (is_LUI | is_AUIPC);
 	// operands: sext(imm) generator
 	wire [31:0] sext_imm;
 	assign sext_imm = ({ {20{instReg[31]}}, instReg[31:20] }                                    & {32{is_IType}})
@@ -255,51 +255,51 @@ module custom_cpu(
 	assign snpc = pcReg + 32'd4;
 	wire [31:0] bnpc_src = (is_I_JType) ? src1 : pcReg;
 	assign bnpc = bnpc_src + sext_imm;
-	assign dnpc =  (is_JType)                                                                    ? bnpc
-	            : ((is_I_JType)                                                                  ? {bnpc[31:1], 1'b0}
-	            : ((is_BType & (func3_onehot[0] | func3_onehot[5] | func3_onehot[7]) & aluZero)  ? bnpc
-	            : ((is_BType & (func3_onehot[1] | func3_onehot[4] | func3_onehot[6]) & ~aluZero) ? bnpc 
-	            :                                                                                  snpc )));
+	assign dnpc =  (is_JType)                                           ? bnpc
+	            : ((is_I_JType)                                         ? {bnpc[31:1], 1'b0}
+	            : ((is_BType & |{func[0], func[5], func[7]} & aluZero)  ? bnpc
+	            : ((is_BType & |{func[1], func[4], func[6]} & ~aluZero) ? bnpc 
+	            :                                                         snpc )));
 	// connect shifter
-	assign shiftOp     = (2'b00   & {2{func3_onehot[1]}}) // sll slli
-	                   | (2'b11   & {2{func3_onehot[5] & func7[5]}}) // sra srai
-	                   | (2'b10   & {2{func3_onehot[5] & ~func7[5]}}); // srl srli
+	assign shiftOp     = (2'b00   & {2{func[1]            }})  // sll slli
+	                   | (2'b11   & {2{func[5] &  func7[5]}})  // sra srai
+	                   | (2'b10   & {2{func[5] & ~func7[5]}}); // srl srli
 	assign shiftTarget = src1;
 	assign shamt       = (is_I_CalType) ? sext_imm[4:0] : src2[4:0];
 	// connect alu
 	assign aluA  = (is_AUIPC) ? pcReg : src1;
 	assign aluB  = (is_RType | is_BType) ?  src2 : sext_imm;
-	assign aluOp = (3'b010 & {3{is_I_LDType | is_SType | is_AUIPC | (is_RType & func3_onehot[0] & ~func7[5]) | (is_I_CalType & func3_onehot[0])}})
-	             | (3'b110 & {3{(is_RType & func3_onehot[0] & func7[5]) | (is_BType & func3_onehot[0]) | (is_BType & func3_onehot[1])}})
-	             | (3'b000 & {3{(is_RType | is_I_CalType) & func3_onehot[7]}})
-	             | (3'b001 & {3{(is_RType | is_I_CalType) & func3_onehot[6]}})
-	             | (3'b100 & {3{(is_RType | is_I_CalType) & func3_onehot[4]}})
-	             | (3'b111 & {3{((is_RType | is_I_CalType) & func3_onehot[2]) | (is_BType & (func3_onehot[4] | func3_onehot[5]))}})
-	             | (3'b011 & {3{((is_RType | is_I_CalType) & func3_onehot[3]) | (is_BType & (func3_onehot[6] | func3_onehot[7]))}});
+	assign aluOp = (3'b010 & {3{is_I_LDType | is_SType | is_AUIPC | (is_RType & func[0] & ~func7[5]) | (is_I_CalType & func[0])}})
+	             | (3'b110 & {3{(is_RType & func[0] & func7[5]) | (is_BType & func[0]) | (is_BType & func[1])}})
+	             | (3'b000 & {3{(is_RType | is_I_CalType) & func[7]}})
+	             | (3'b001 & {3{(is_RType | is_I_CalType) & func[6]}})
+	             | (3'b100 & {3{(is_RType | is_I_CalType) & func[4]}})
+	             | (3'b111 & {3{((is_RType | is_I_CalType) & func[2]) | (is_BType & (func[4] | func[5]))}})
+	             | (3'b011 & {3{((is_RType | is_I_CalType) & func[3]) | (is_BType & (func[6] | func[7]))}});
 	// connect memory write
 	assign Address = {aluOut[31:2], 2'b00};
-	assign Write_data = ( {4{src2[7:0]}}  & {32{func3_onehot[0]}} )
-	                  | ( {2{src2[15:0]}} & {32{func3_onehot[1]}} )
-	                  | ( src2            & {32{func3_onehot[2]}} );
-	assign Write_strb[0] = (func3_onehot[0] & aluOff0) | (func3_onehot[1] & aluOff0) | func3_onehot[2];
-	assign Write_strb[1] = (func3_onehot[0] & aluOff1) | (func3_onehot[1] & aluOff0) | func3_onehot[2];
-	assign Write_strb[2] = (func3_onehot[0] & aluOff2) | (func3_onehot[1] & aluOff2) | func3_onehot[2];
-	assign Write_strb[3] = (func3_onehot[0] & aluOff3) | (func3_onehot[1] & aluOff2) | func3_onehot[2];
+	assign Write_data = ( {4{src2[7:0]}}  & {32{func[0]}} )
+	                  | ( {2{src2[15:0]}} & {32{func[1]}} )
+	                  | ( src2            & {32{func[2]}} );
+	assign Write_strb[0] = (func[0] & aluOff0) | (func[1] & aluOff0) | func[2];
+	assign Write_strb[1] = (func[0] & aluOff1) | (func[1] & aluOff0) | func[2];
+	assign Write_strb[2] = (func[0] & aluOff2) | (func[1] & aluOff2) | func[2];
+	assign Write_strb[3] = (func[0] & aluOff3) | (func[1] & aluOff2) | func[2];
 	// process memory read
 	wire [31:0] readData_processed;
-	assign readData_processed = (readDataReg                                 & {32{func3_onehot[2]}})
-	                          | ({16'd0,                 readDataReg[15: 0]} & {32{func3_onehot[5] & aluOff0}})
-	                          | ({16'd0,                 readDataReg[31:16]} & {32{func3_onehot[5] & aluOff2}})
-	                          | ({{16{readDataReg[15]}}, readDataReg[15: 0]} & {32{func3_onehot[1] & aluOff0}})
-	                          | ({{16{readDataReg[31]}}, readDataReg[31:16]} & {32{func3_onehot[1] & aluOff2}})
-	                          | ({24'd0,                 readDataReg[ 7: 0]} & {32{func3_onehot[4] & aluOff0}})
-	                          | ({24'd0,                 readDataReg[15: 8]} & {32{func3_onehot[4] & aluOff1}})
-	                          | ({24'd0,                 readDataReg[23:16]} & {32{func3_onehot[4] & aluOff2}})
-	                          | ({24'd0,                 readDataReg[31:24]} & {32{func3_onehot[4] & aluOff3}})
-	                          | ({{24{readDataReg[ 7]}}, readDataReg[ 7: 0]} & {32{func3_onehot[0] & aluOff0}})
-	                          | ({{24{readDataReg[15]}}, readDataReg[15: 8]} & {32{func3_onehot[0] & aluOff1}})
-	                          | ({{24{readDataReg[23]}}, readDataReg[23:16]} & {32{func3_onehot[0] & aluOff2}})
-	                          | ({{24{readDataReg[31]}}, readDataReg[31:24]} & {32{func3_onehot[0] & aluOff3}});
+	assign readData_processed = (readDataReg                                 & {32{func[2]}})
+	                          | ({16'd0,                 readDataReg[15: 0]} & {32{func[5] & aluOff0}})
+	                          | ({16'd0,                 readDataReg[31:16]} & {32{func[5] & aluOff2}})
+	                          | ({{16{readDataReg[15]}}, readDataReg[15: 0]} & {32{func[1] & aluOff0}})
+	                          | ({{16{readDataReg[31]}}, readDataReg[31:16]} & {32{func[1] & aluOff2}})
+	                          | ({24'd0,                 readDataReg[ 7: 0]} & {32{func[4] & aluOff0}})
+	                          | ({24'd0,                 readDataReg[15: 8]} & {32{func[4] & aluOff1}})
+	                          | ({24'd0,                 readDataReg[23:16]} & {32{func[4] & aluOff2}})
+	                          | ({24'd0,                 readDataReg[31:24]} & {32{func[4] & aluOff3}})
+	                          | ({{24{readDataReg[ 7]}}, readDataReg[ 7: 0]} & {32{func[0] & aluOff0}})
+	                          | ({{24{readDataReg[15]}}, readDataReg[15: 8]} & {32{func[0] & aluOff1}})
+	                          | ({{24{readDataReg[23]}}, readDataReg[23:16]} & {32{func[0] & aluOff2}})
+	                          | ({{24{readDataReg[31]}}, readDataReg[31:24]} & {32{func[0] & aluOff3}});
 	// connect regfile
 	assign RF_raddr1 = rs1;
 	assign RF_raddr2 = rs2;
@@ -312,4 +312,92 @@ module custom_cpu(
 	                : ((is_LUI)                ? sext_imm
 	                : ((is_shiftType)          ? shiftOut
 	                :                            aluOut )));
+
+	/* performance counter */
+	reg [31:0] cycle_cnt;
+	always @(posedge clk) begin
+		if (rst == 1'b1)
+			cycle_cnt <= 32'd0;
+		else
+			cycle_cnt <= cycle_cnt + 32'd1;
+	end
+	assign cpu_perf_cnt_0 = cycle_cnt;
+
+	reg [31:0] inst_cnt;
+	always @(posedge clk) begin
+		if (rst == 1'b1)
+			inst_cnt <= 32'd0;
+		else if (current_state == ID) // each inst goes through ID state for exactly one cycle
+			inst_cnt <= inst_cnt + 32'd1;
+		else
+			inst_cnt <= inst_cnt;
+	end
+	assign cpu_perf_cnt_1 = inst_cnt;
+
+	reg [31:0] mem_read_inst_cnt;
+	always @(posedge clk) begin
+		if (rst == 1'b1)
+			mem_read_inst_cnt <= 32'd0;
+		else if (current_state == ID && is_I_LDType)
+			mem_read_inst_cnt <= mem_read_inst_cnt + 32'd1;
+		else
+			mem_read_inst_cnt <= mem_read_inst_cnt;
+	end
+	assign cpu_perf_cnt_2 = mem_read_inst_cnt;
+
+	reg [31:0] mem_write_inst_cnt;
+	always @(posedge clk) begin
+		if (rst == 1'b1)
+			mem_write_inst_cnt <= 32'd0;
+		else if (current_state == ID && is_SType)
+			mem_write_inst_cnt <= mem_write_inst_cnt + 32'd1;
+		else
+			mem_write_inst_cnt <= mem_write_inst_cnt;
+	end
+	assign cpu_perf_cnt_3 = mem_write_inst_cnt;
+
+	reg [31:0] mem_read_req_cycle_cnt;
+	always @(posedge clk) begin
+		if (rst == 1'b1)
+			mem_read_req_cycle_cnt <= 32'd0;
+		else if (current_state == LD)
+			mem_read_req_cycle_cnt <= mem_read_req_cycle_cnt + 32'd1;
+		else
+			mem_read_req_cycle_cnt <= mem_read_req_cycle_cnt;
+	end
+	assign cpu_perf_cnt_4 = mem_read_req_cycle_cnt;
+
+	reg [31:0] mem_read_wait_cycle_cnt;
+	always @(posedge clk) begin
+		if (rst == 1'b1)
+			mem_read_wait_cycle_cnt <= 32'd0;
+		else if (current_state == RDW)
+			mem_read_wait_cycle_cnt <= mem_read_wait_cycle_cnt + 32'd1;
+		else
+			mem_read_wait_cycle_cnt <= mem_read_wait_cycle_cnt;
+	end
+	assign cpu_perf_cnt_5 = mem_read_wait_cycle_cnt;
+
+	reg [31:0] mem_write_req_cycle_cnt;
+	always @(posedge clk) begin
+		if (rst == 1'b1)
+			mem_write_req_cycle_cnt <= 32'd0;
+		else if (current_state == ST)
+			mem_write_req_cycle_cnt <= mem_write_req_cycle_cnt + 32'd1;
+		else
+			mem_write_req_cycle_cnt <= mem_write_req_cycle_cnt;
+	end
+	assign cpu_perf_cnt_6 = mem_write_req_cycle_cnt;
+
+	reg [31:0] bj_inst_cnt;
+	always @(posedge clk) begin
+		if (rst == 1'b1)
+			bj_inst_cnt <= 32'd0;
+		else if (current_state == ID && (is_BType | is_I_JType | is_JType))
+			bj_inst_cnt <= bj_inst_cnt + 32'd1;
+		else
+			bj_inst_cnt <= bj_inst_cnt;
+	end
+	assign cpu_perf_cnt_7 = bj_inst_cnt;
+
 endmodule

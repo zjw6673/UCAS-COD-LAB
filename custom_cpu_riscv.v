@@ -114,7 +114,7 @@ module custom_cpu(
 	// shifter
 	shifter shifter (.A(shiftTarget), .B(shamt), .Shiftop(shiftOp), .Result(shiftOut));
 	// alu
-	alu alu (.A(aluA), .B(aluB), .ALUop(aluOp), .Overflow(), .CarryOut(),
+	alu_riscv alu (.A(aluA), .B(aluB), .ALUop(aluOp), .Overflow(), .CarryOut(),
 	         .Zero(aluZero), .Result(aluOut));
 	
 	/* create decode signals */
@@ -261,21 +261,17 @@ module custom_cpu(
 	            : ((is_BType & |{func[1], func[4], func[6]} & ~aluZero) ? bnpc 
 	            :                                                         snpc )));
 	// connect shifter
-	assign shiftOp     = (2'b00   & {2{func[1]            }})  // sll slli
-	                   | (2'b11   & {2{func[5] &  func7[5]}})  // sra srai
-	                   | (2'b10   & {2{func[5] & ~func7[5]}}); // srl srli
+	assign shiftOp = {func3[2], ~{func3[0] ^ func7[5]}};
 	assign shiftTarget = src1;
 	assign shamt       = (is_I_CalType) ? sext_imm[4:0] : src2[4:0];
 	// connect alu
 	assign aluA  = (is_AUIPC) ? pcReg : src1;
 	assign aluB  = (is_RType | is_BType) ?  src2 : sext_imm;
-	assign aluOp = (3'b010 & {3{is_I_LDType | is_SType | is_AUIPC | (is_RType & func[0] & ~func7[5]) | (is_I_CalType & func[0])}})
-	             | (3'b110 & {3{(is_RType & func[0] & func7[5]) | (is_BType & func[0]) | (is_BType & func[1])}})
-	             | (3'b000 & {3{(is_RType | is_I_CalType) & func[7]}})
-	             | (3'b001 & {3{(is_RType | is_I_CalType) & func[6]}})
-	             | (3'b100 & {3{(is_RType | is_I_CalType) & func[4]}})
-	             | (3'b111 & {3{((is_RType | is_I_CalType) & func[2]) | (is_BType & (func[4] | func[5]))}})
-	             | (3'b011 & {3{((is_RType | is_I_CalType) & func[3]) | (is_BType & (func[6] | func[7]))}});
+	assign aluOp = ((is_RType)                       ? {func3 ^ {2'b0, func7[5]}}
+	             : ((is_I_CalType)                   ? func3
+	             : ((is_BType & ~func[0] & ~func[1]) ? {1'b0, func3[2:1]}
+	             : ((is_BType & (func[0] | func[1])) ? 3'b001
+	             :                                     3'b000 ))));
 	// connect memory write
 	assign Address = {aluOut[31:2], 2'b00};
 	assign Write_data = ( {4{src2[7:0]}}  & {32{func[0]}} )

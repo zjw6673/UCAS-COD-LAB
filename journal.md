@@ -67,3 +67,25 @@ which is:
 11 - ra
 
 which is exactly the same as the original one
+
+# icache design
+
+## structure
+
+1 cache (1024 Byte) = 4 ways
+1 way   ( 256 Byte) = 8 blocks(aka. Set)
+1 block (  32 Byte) = 8 words
+1 word  (   4 Byte)
+
+|     tag(24)     | index(3) | offset(5) |
+
+- offset: select word from a block (xxx00, only three bits valid, represent 8 words)
+- index:  select block(Set) from a way
+- tag:    each block has a tag, indicating the highest 24 bit of its address
+
+## working principle
+
+on receiving an address, interpret it as tag, index and offset
+search on index layer, to find any block with the same tag as input tag
+if found, return select the word in this block according to offset and return
+else, pick a space to read from mem, ...

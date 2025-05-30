@@ -89,3 +89,35 @@ on receiving an address, interpret it as tag, index and offset
 search on index layer, to find any block with the same tag as input tag
 if found, return select the word in this block according to offset and return
 else, pick a space to read from mem, ...
+
+## evicting algorithm: Least Recently Used (LRU) approximation
+
+use binary tree to approximate a LRU, number in the tree encodes the path to the most recent node(0 right, 1 left)
+after each cache access, update LRU of the corresponding set
+when evicting, choose the OPPOSITE path to evict
+
+|\\|hit_way0|hit_way1|hit_way2|hit_way3|
+|:--:|:--:|:--:|:--:|:--:|
+|LRU[2]|0|0|1|1|
+|LRU[1]|0|1|-|-|
+|LRU[0]|-|-|0|1|
+
+for each set, the LRU(Least Recent Used algorithm) is approximately represented
+with a binary tree(three bit signal with order: root node, lchid and rchild),
+which represents the path to the recent used way, with 0-left and 1-right.
+for example, if LRU[reqIdx] == 3'b101, then it means first right then right, so way3 is most recently used
+
+|LRU[2]|LRU[1]|LRU[0]|evictWay0|evictWay1|evictWay2|evictWay3|
+|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+|0|0|0|0|0|0|1|
+|0|0|1|0|0|1|0|
+|0|1|0|0|0|0|1|
+|0|1|1|0|0|1|0|
+|1|0|0|0|1|0|0|
+|1|0|1|0|1|0|0|
+|1|1|0|1|0|0|0|
+|1|1|1|1|0|0|0|
+
+
+
+

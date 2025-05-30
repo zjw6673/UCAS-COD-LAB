@@ -75,6 +75,7 @@ module icache_top (
 	// eviction
 	wire [`SET_ADDR_WIDTH - 1:0] evictIdx;  // choose a set to evict
 	wire [     `CACHE_WAY - 1:0] evictEn;    // choose a way to evict
+	wire [     `CACHE_WAY - 1:0] evictWay;
 	wire                         evictValid;
 	wire [       `TAG_LEN - 1:0] evictTag;
 	wire [      `LINE_LEN - 1:0] evictData;
@@ -185,7 +186,7 @@ module icache_top (
 	assign evictValid = (currentStateReg == REFILL);
 	assign evictTag   = reqTag;
 	assign evictData  = memBlockReg;
-	assign evictEn    = (currentStateReg == REFILL | currentStateReg == EVICT) ? 4'b0100 : 4'b0000; // TODO: add evict algorithm
+	assign evictEn    = (currentStateReg == REFILL) ? evictWay : 4'b0000;
 
 	/* cpu write signals */
 	assign to_cpu_cache_rsp_valid = ~rst & (currentStateReg == RESP);
@@ -194,6 +195,37 @@ module icache_top (
 	                                   | (rdData[2] & {`LINE_LEN{hit_way2}})
 	                                   | (rdData[3] & {`LINE_LEN{hit_way3}});
 	assign returnData = returnBlock[ {reqOff, 3'b0} +: 32]; // [reqOff * 8, reqOff * 8 + 31]
+
+	/* evict algorithm:  LRU approximation */
+	// create an LRU for each set
+	reg [2:0] LRU [7:0];
+	// update LRU when rst or after RESP
+	always @(posedge clk) begin
+		if (rst) begin
+			LRU[0] <= 3'b0;
+			LRU[1] <= 3'b0;
+			LRU[2] <= 3'b0;
+			LRU[3] <= 3'b0;
+			LRU[4] <= 3'b0;
+			LRU[5] <= 3'b0;
+			LRU[6] <= 3'b0;
+			LRU[7] <= 3'b0;
+		end else if (currentStateReg == RESP) begin // update binary tree
+			LRU[reqIdx][2] <= (hit_way2 | hit_way3);
+			LRU[reqIdx][1] <= (hit_way0 | hit_way1) ? hit_way1 : LRU[reqIdx][1];
+			LRU[reqIdx][0] <= (hit_way2 | hit_way3) ? hit_way3 : LRU[reqIdx][0];
+		end
+	end
+	// generate evictWay signal: use empty Way first, then leastUseWay
+	wire leastUseWay0 =  LRU[reqIdx][2] &  LRU[reqIdx][1];
+	wire leastUseWay1 =  LRU[reqIdx][2] & ~LRU[reqIdx][1];
+	wire leastUseWay2 = ~LRU[reqIdx][2] &  LRU[reqIdx][0];
+	wire leastUseWay3 = ~LRU[reqIdx][2] & ~LRU[reqIdx][0];
+	wire [3:0] firstEmptyWay = ~rdValid[0] ? 4'b0001 :
+		                         ~rdValid[1] ? 4'b0010 :
+		                         ~rdValid[2] ? 4'b0100 :
+		                         ~rdValid[3] ? 4'b1000 : 4'b0000;
+	assign evictWay = (|firstEmptyWay) ? firstEmptyWay : {leastUseWay3, leastUseWay2, leastUseWay1, leastUseWay0};
 
 endmodule
 

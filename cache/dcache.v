@@ -273,7 +273,10 @@ else
 	end
 
 	/* WAIT state */
-	assign to_cpu_mem_req_ready = rst | (currentStateReg == WAIT);
+	assign to_cpu_mem_req_ready = rst
+	                            | (currentStateReg == WAIT & from_cpu_mem_req_valid & ~from_cpu_mem_req) // read req
+	                            | (currentStateReg == WR_BY & from_mem_wr_data_ready & to_mem_wr_data_last) // bypass write
+	                            | (currentStateReg == WR_CCH); // cache write
 	always @(posedge clk) begin // registrate cpu input after WAIT
 		if (currentStateReg == WAIT) begin
 			cpuReqReg   <= from_cpu_mem_req;
@@ -428,15 +431,17 @@ else
 		end
 	end
 	// generate evictWay signal: evict empty Way first, then leastUseWay
-	wire leastUseWay0 =  LRU[reqIdx][2] &  LRU[reqIdx][1];
-	wire leastUseWay1 =  LRU[reqIdx][2] & ~LRU[reqIdx][1];
-	wire leastUseWay2 = ~LRU[reqIdx][2] &  LRU[reqIdx][0];
-	wire leastUseWay3 = ~LRU[reqIdx][2] & ~LRU[reqIdx][0];
+	wire [3:0] lruWay = {
+		~LRU[reqIdx][2] & ~LRU[reqIdx][0], // way3
+		~LRU[reqIdx][2] &  LRU[reqIdx][0], // way2
+		 LRU[reqIdx][2] & ~LRU[reqIdx][1], // way1
+		 LRU[reqIdx][2] &  LRU[reqIdx][1]  // way0
+	};
 	wire [3:0] firstEmptyWay = ~rdValid[0] ? 4'b0001 :
 	                           ~rdValid[1] ? 4'b0010 :
 	                           ~rdValid[2] ? 4'b0100 :
 	                           ~rdValid[3] ? 4'b1000 : 4'b0000;
-	assign evictWay = (|firstEmptyWay) ? firstEmptyWay : {leastUseWay3, leastUseWay2, leastUseWay1, leastUseWay0};
+	assign evictWay = (|firstEmptyWay) ? firstEmptyWay : lruWay;
 
 endmodule
 

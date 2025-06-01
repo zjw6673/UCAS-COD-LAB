@@ -273,10 +273,11 @@ else
 	end
 
 	/* WAIT state */
+	wire preJudgeBypath = (~|from_cpu_mem_req_addr[31:5] | (|from_cpu_mem_req_addr[31:30]));
 	assign to_cpu_mem_req_ready = rst
 	                            | (currentStateReg == WAIT & from_cpu_mem_req_valid & ~from_cpu_mem_req) // read req
-	                            | (currentStateReg == WR_BY & from_mem_wr_data_ready & to_mem_wr_data_last) // bypass write
-	                            | (currentStateReg == WR_CCH); // cache write
+	                            | (currentStateReg == WAIT & from_cpu_mem_req_valid & from_cpu_mem_req & ~preJudgeBypath) // cache write
+	                            | (currentStateReg == WR_BY & from_mem_wr_data_ready & to_mem_wr_data_last); // bypass write
 	always @(posedge clk) begin // registrate cpu input after WAIT
 		if (currentStateReg == WAIT) begin
 			cpuReqReg   <= from_cpu_mem_req;

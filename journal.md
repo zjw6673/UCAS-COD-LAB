@@ -118,6 +118,52 @@ for example, if LRU[reqIdx] == 3'b101, then it means first right then right, so 
 |1|1|0|1|0|0|0|
 |1|1|1|1|0|0|0|
 
+# dcache design
 
+## FSM state design
 
+- **WAIT**: set `to_cpu_mem_req_ready` and wait for cpu to send a request
+- **TAG_RD**: read the request addr from cpu and see if it's cachable, then check if cache hit
 
+if it is not cachable, enter bypath logic:
+
+- **WRR_BY**: bypath send mem write request. set `to_mem_wr_req_valid`, output `to_mem_wr_req_len == 0`
+    and wait for mem to be ready
+- **WR_BY**: bypath write data to mem. set `to_mem_wr_data_valid`
+    and output correct `to_mem_wr_data`, `to_mem_wr_data_strb`, `to_mem_wr_last == 1`
+    then wait for mem to be ready
+
+- **RDR_BY**: bypath send mem read request. set `to_mem_rd_req_valid`, output `to_mem_rd_req_len == 0`
+    and wait for mem to be ready
+- **RD_BY**: bypath receive data from mem. set `to_mem_rd_rsp_ready`
+- **RSP_BY**: bypath respond to cpu. set `to_cpu_cache_rsp_valid` and output data read from mem
+    wait for cpu to be ready
+
+else if it is cacheable but not hit, enter evict logic:
+
+- **EVICT**: decide wether to write-back accoding to dirty
+- **WRR_MEM**: send mem write request. set `to_mem_wr_req_valid`, output `to_mem_wr_len == 7`
+    wait for mem to be ready
+- **RDR_MEM**: send mem read request. set `to_mem_rd_req_valid`, output `to_mem_rd_req_len == 7`
+    wait for mem to be ready
+- **RD_MEM**: receive data from mem. set `to_mem_rd_rsp_ready`
+- **REFILL**: refill block to cache.
+
+else cachable and hit, enter normal logic:
+
+- **RD_CCH**: read data from cache. read a block and select data by offset
+- **RSP_CCH**: cache respond to cpu. set `to_cpu_cache_rsp_valid` and output data selected in RD_CCH
+    wait for cpu to be ready
+- **WR_CCH**: write data to cache and **set dirty**
+
+## problems faced
+
+When the program stores data to mem through the bypass, cpu receives read handshake signal and
+proceed to execute following instructions. But at this time, dcache may not have stored the data to mem yet.
+this may cause errors since cpu would execute following instructions before the sw instrcution is actually finished.
+
+This happens because of **the CPU FSM state design**. ld inst has LD and RDW states seperately for read_req and read_rsp.
+whereas st inst has only ST state for both write_req and write_rsp
+
+the solutions: for write request, dcache send req_ready signal only after the data has been actually written to its place (mem or cache)
+    for read signals, send ready signal right after WAIT state

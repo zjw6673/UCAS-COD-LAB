@@ -1,4 +1,4 @@
-`timescale 10 ns / 1 ns
+`timescale 10ns / 1ns
 
 module mul(
 	input         clk,
@@ -18,7 +18,8 @@ localparam WAIT  = 4'b0001,
 reg [3:0] currentState, nextState;
 
 reg  [65:0] AQ;
-reg  [32:0] X, X_cmp;
+reg  [32:0] X;
+wire [32:0] X_cmp;
 reg  [ 4:0] cnt;
 wire [32:0] addNum;
 

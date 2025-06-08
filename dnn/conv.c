@@ -101,78 +101,54 @@ void convolution()
 	conv_size.d3 = conv_out_w;
 
 	//TODO: Please add your implementation here
-
-	/* calculate channel sizes */
-	short FilterSize = 1 + mul(weight_size.d2, weight_size.d3); // 26 shorts, repeat 20 times from @weight
-
+	
+	/* calculate sizes */
+	short FilterSize = 1 + mul(weight_size.d2, weight_size.d3); // bias + 5 * 5 weights
 	short InputSize = mul(input_fm_w, input_fm_h);
-
 	short OutputSize = mul(conv_size.d2, conv_size.d3);
 
-	for (short ch = 0; ch < conv_size.d1; ch++) { // for each channel
-
+	for (short ch = 0; ch < conv_size.d1; ch++) { // for each output channel
 		short bias = *weight;
-		short *filter = weight + 1; // point to the start addr of current filter
+		short *filter = weight + 1;
 
-		short r_pos = 0; // the first row pos in padded input
-		for (short r = 0; r < conv_out_h; r++) { // for each row
+		short *channel_out = out; // output to this channel
 
-			short c_pos = 0; // the first col pos in padded input
-			short *result_pos = out;
-			for (short c = 0; c < conv_out_w; c++) { // for each col
-				int result = 0; // store in int to avoid overflow
+		for (short r = 0; r < conv_out_h; r++) { // for each output row
+			short r_base = mul(r, (short)stride) - pad; // base row in input
+			
+			for (short c = 0; c < conv_out_w; c++) { // for each output col
+				short c_base = mul(c, (short)stride) - pad; // base col in input
+				
+				int result = 0; // store in in to avoid overflow
 
-				short *InputAddr = in;
-				short *filterAddr = filter;
+				short *filter_ptr = filter;
+				short *input_ch = in;
 				for (short n = 0; n < rd_size.d1; n++) { // for each input channel
+					for (short i = 0; i < weight_size.d2; i++) { // filter rows
+						short h_pos = r_base + i;
 
-					/*
-					* calculate filter * paded_input[r_pos,...][c_pos,...]
-					* that is, filter[i][j] * padded_input[r_pos + i][c_pos + j]
-					* 
-					* meanwhile, let h_pos and w_pos denote the corresponding number in input matrix
-					* then we have:
-					* 	h_pos = r_pos + i - pad, w_pos = c_pos + j - pad
-					* and if (h_pos < 0 || h_pos >= input_fm_h || w_pos < 0 || w_pos >= input_fm_w),
-					* then this number is in padding
-					*/
-					short h_pos, w_pos;
-					short *current_input_row = InputAddr;
-					for (short i = 0; i < weight_size.d2; i++) {
-						h_pos = r_pos + i - pad;
-						if (i == 0)
-							current_input_row += mul(h_pos, input_fm_w);
-						else
-							current_input_row += input_fm_w;
-						
-						short *current_input = current_input_row;
-						for (short j = 0; j < weight_size.d3; j++) {
-							w_pos = c_pos + j - pad;
-							if (j == 0)
-								current_input += w_pos;
-							else
-								current_input++;
-
+						for (short j = 0; j < weight_size.d3; j++) { // filter cols
+							short w_pos = c_base + j;
+							
 							if (h_pos >= 0 && h_pos < input_fm_h && w_pos >= 0 && w_pos < input_fm_w) { // not in padding
-								result += mul(*current_input, *filterAddr);
+								short input_val = input_ch[mul(h_pos, (short)input_fm_w) + w_pos];
+								result += mul(input_val, *filter_ptr);
 							}
-							filterAddr++; // since filter array is consecutive, we can directly inc
-						}	
+							filter_ptr++; // since weight array is consecutive, inc directly
+						}
 					}
-					InputAddr += InputSize;
+					input_ch += InputSize; // next input channel
 				}
-				/* store result into out */
-				*result_pos = (short)(result >> FRAC_BIT);
-				*result_pos += bias;
-				result_pos++;
-				c_pos += stride;
+
+				// store result
+				channel_out[mul(r, (short)conv_size.d3) + c] = (short)(result >> FRAC_BIT) + bias;
 			}
-			r_pos += stride;
-			out += conv_size.d3;
 		}
-		weight += FilterSize;
-		out += OutputSize;
+
+		weight += FilterSize; // next filter
+		out += OutputSize; // next output channel
 	}
+
 }
 
 void pooling()
@@ -211,58 +187,43 @@ void pooling()
 	}
 
 	//TODO: Please add your implementation here
-
+	
+	// calculate size
 	short InputSize = mul(input_fm_h, input_fm_w);
-	// short OutputSize = mul(pool_out_h, pool_out_w);
+	short OutputSize = mul(pool_out_h, pool_out_w);
 
-	short *ch_output = out;
 	short *ch_input = out;
+	short *ch_output = out;
+
 	for (short ch = 0; ch < conv_size.d1; ch++) { // for each channel
-		short r_pos = 0;
-		for (short r = 0; r < pool_out_h; r++) { // for each row
-			short c_pos = 0;
-	 		for (short c = 0; c < pool_out_w; c++) { // for each col
-				/* 
-				 * find out the biggest number among 
-				 * padded_input[r_pos][c_pos]  ~  padded_input[r_pos + POOL_KERN_SIZE - 1][c_pos + POOL_KERN_SIZE - 1]
-				 * 
-				 * let h_pos and w_pos denote the accuall pos in the input Matrix (without padding) 
-				 * then we have:
-				 * 	h_pos = r_pos + i - pad,  w_pos = c_pos + j - pad
-				 * if (h_pos < 0 || h_pos >= input_fm_h || w_pos < 0 || w_pos >= input_fm_w), then number is in padding
-				 */
-				short max = 0x8000; // init to the smallest short
-				short *current_input_row = ch_input;
-				for (short i = 0; i < KERN_ATTR_POOL_KERN_SIZE; i++) {
-					short h_pos = r_pos + i - pad;
-					if (i == 0)
-						current_input_row += mul(h_pos, input_fm_w);
-					else
-						current_input_row += input_fm_w;
+		for (short r = 0; r < pool_out_h; r++) { // for each output row
+			short r_base = mul(r, (short)stride) - pad;
 
-					short *current_input = current_input_row;
-					for (short j = 0; j < KERN_ATTR_POOL_KERN_SIZE; j++) {
-						short w_pos = c_pos + j - pad;
+			for (short c = 0; c < pool_out_w; c++) { // for each output col
+				short c_base = mul(c, (short)stride) - pad;
 
-						short val = 0; // treat padding as 0
+				short max_val = 0x8000; // min short value
+
+				for (short i = 0; i < KERN_ATTR_POOL_KERN_SIZE; i++) { // pool rows
+					short h_pos = r_base + i;
+
+					for (short j = 0; j < KERN_ATTR_POOL_KERN_SIZE; j++) { // pool cols
+						short w_pos = c_base + j;
+
 						if (h_pos >= 0 && h_pos < input_fm_h && w_pos >= 0 && w_pos < input_fm_w) { // not in padding
-							val = *current_input;
+							short val = ch_input[mul(h_pos, (short)input_fm_w) + w_pos];
+							if (val > max_val) max_val = val;
 						}
-						if (val > max) max = val;
-						current_input++;
 					}
 				}
-				*ch_output = max;
-				ch_output++;
-				c_pos += stride;
+				// write output
+				ch_output[mul(r, (short)pool_out_w) + c] = max_val;
 			}
-			r_pos += stride;
 		}
+		// next channel
 		ch_input += InputSize;
+		ch_output += OutputSize;
 	}
-
-
-
 }
 
 #ifdef USE_HW_ACCEL

@@ -2,6 +2,7 @@
 #include "trap.h"
 #include "mul.h"
 #include "div.h"
+#include "perf_cnt.h"
 
 #define FRAC_BIT 10
 
@@ -273,6 +274,10 @@ int comparing()
 
 int main()
 {
+	Result res;
+	res.msec = 0;
+
+	bench_prepare(&res);
 
 #ifdef USE_HW_ACCEL
 	printf("Launching task...\n");
@@ -285,7 +290,14 @@ int main()
 #endif
 
 	int result = comparing();
+
+	bench_done(&res);
+      	printf("========== Performance Counter ==========\n");
+      	printf("Clock cycle count: %d\n", res.msec);
+      	printf("=========================================\n");
+
 	printf("benchmark finished\n");
+
 
 	if (result == 0) {
 		hit_good_trap();

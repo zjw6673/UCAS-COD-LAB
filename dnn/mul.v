@@ -1,5 +1,3 @@
-`timescale 10ns / 1ns
-
 module mul(
 	input         clk,
 	input         rst,
@@ -72,7 +70,7 @@ always @(posedge clk) begin
 	else if (currentState == ADD)
 		AQ <= {(AQ[65:33] + addNum), AQ[32:0]}; // add
 	else if (currentState == SHIFT)
-		AQ <= {1'b0, AQ[65:1]}; // shift right
+		AQ <= {AQ[65], AQ[65:1]}; // shift right
 	else
 		AQ <= AQ;
 end
@@ -96,6 +94,6 @@ assign addNum = (~AQ[1] &  AQ[0]) ? X     :
 
 /* RSP state */
 assign ready = (currentState == RSP) ? 1'b1 : 1'b0;
-assign result = AQ[64:1];
+assign result = AQ[65:2];
 
 endmodule

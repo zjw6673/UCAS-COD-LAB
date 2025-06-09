@@ -159,7 +159,7 @@ module custom_cpu(
 	wire is_shiftType = ((is_RType | is_I_CalType) & (func[1] | func[5]));
 	wire is_IType     = (is_I_CalType | is_I_LDType | is_I_JType);
 	wire is_UType     = (is_LUI | is_AUIPC);
-	wire is_MUL       = (is_RType & func7 == 7'b1);
+	wire is_MUL       = (is_RType & func7[0]);
 	// operands: sext(imm) generator
 	wire [31:0] sext_imm;
 	assign sext_imm = ({ {20{instReg[31]}}, instReg[31:20] }                                    & {32{is_IType}})

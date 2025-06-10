@@ -269,19 +269,22 @@ module engine_core #(
 
 	reg wrValidReg; // delay one clk cycle
 	always @(posedge clk) begin
-		wrValidReg <= fifo_rden;
+		if (~wr_ready) // hold the valid signal when ready is off!!
+			wrValidReg <= wrValidReg;
+		else
+			wrValidReg <= fifo_rden;
 	end
 	assign wr_valid = wrValidReg;
 
 	assign wr_data = fifo_rdata; // FIFO will hold the data, so no need for registration
 
 	// generate last signal
-	reg [7:0] lastGenerator;
+	reg [8:0] lastGenerator;
 	always @(posedge clk) begin
 		if (wr_req_ready & wr_req_valid) // init lastGenerator when entering WR state
-			lastGenerator <= (8'b1 << (wr_req_len + 1));
+			lastGenerator <= (9'b1 << (wr_req_len + 1));
 		else if (fifo_rden) // shift whenever fifo is read
-			lastGenerator <= {1'b0, lastGenerator[7:1]};
+			lastGenerator <= {1'b0, lastGenerator[8:1]};
 		else
 			lastGenerator <= lastGenerator;
 	end

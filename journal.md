@@ -167,3 +167,52 @@ whereas st inst has only ST state for both write_req and write_rsp
 
 the solutions: for write request, dcache send req_ready signal only after the data has been actually written to its place (mem or cache)
     for read signals, send ready signal right after WAIT state
+
+# DMA design
+
+## task breakdown
+
+there is a mem_cpy program that copied data from buffer0(in mem) to buffer1.
+But coping data using a program is slow, we want to write a hardware to help use do that,
+This is the DMA engine.
+
+Buffer0 is devided into sub-buffers(4 kB for each), while working, cpu and DMA maintains a
+ringed-queue together:
+- cpu writes data to buffer and move `head` forward to the recently filled sub-buffer
+- DMA moves data from the sub-buffer pointed by `tail` to buffer1
+
+### How DMA works
+
+DMA works automatically whenever `tail` is lagged behind `head`
+when finished moving a sub-buffer, send a intr to notify cpu
+
+for each sub-buffer, DMA breaks it into several burst transmits:
+1. send burst read req to mem, with max_len 32Byte
+2. store read data to FIFO
+3. send burst write req to mem
+4. write data from FIFO to mem
+5. loop to 1 until sub_buffer is fully moved, then
+6. update tail_ptr: tail_ptr += dma_size
+7. send intr signal to CPU: set INTR bit in ctrl_stat
+
+this requires (N / 32 + (N % 32 != 0)) times of burst transmits
+when N = 4KB, it needs 128 times of burst transmits
+
+- How does DMA where to read from or write to the mem?
+    src_base(in 0x0000) stores the read base addr
+    dest_base(in 0x0004) stores the write base addr
+
+    thus the addr of sub-buffer to read from(in buffer0) can be calculated with: `src_base + tail_ptr`
+    the addr of sub-buffer to write to(in buffer1) can be calculated with: `dest_base + tail_ptr`
+
+### How CPU works
+
+each time in IF state, check if there is and intr
+if so, then:
+1. save PC to EPC, and jump to intr entrance(0x100), and shield all further intr signal
+2. when intr program hits inst `ERET`, recover EPC to PC, relieve intr shield
+
+the intr program is left for us to implement, shoud:
+1. reset the INTR bit of ctrl_stat to 0
+2. mark copied sub-buffer according to tail_ptr
+3. end with an ERET
